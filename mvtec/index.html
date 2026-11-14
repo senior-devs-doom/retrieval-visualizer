@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wizualizator wad (MVTec AD)</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --line:#2c313a; --fg:#e6e8eb; --dim:#8b93a0; --ok:#3ecf6e; --bad:#ef5350; --acc:#5aa9ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui,sans-serif; }
+  #bar { position:sticky; top:0; z-index:5; display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--line); }
+  select, button { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:4px 8px; font:inherit; }
+  button.on { border-color:var(--acc); color:var(--acc); }
+  #stat { color:var(--dim); margin-left:auto; }
+  #grid { padding:12px; display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+  .card { background:var(--panel); border:3px solid var(--line); border-radius:8px; overflow:hidden; }
+  .card.hit { border-color:var(--ok); } .card.miss { border-color:var(--bad); }
+  .imgs { display:flex; } .imgs div { flex:1; position:relative; background:#000; aspect-ratio:1; }
+  .imgs img { width:100%; height:100%; object-fit:contain; display:block; }
+  .imgs span { position:absolute; left:4px; top:3px; font-size:11px; background:#000a; padding:0 4px; border-radius:3px; }
+  .meta { padding:6px 8px; font-size:12px; display:flex; justify-content:space-between; gap:6px; }
+  .dim { color:var(--dim); }
+  .thr { grid-column:1/-1; border-top:2px dashed var(--acc); color:var(--acc); text-align:center; padding:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <b>MVTec AD</b>
+  <select id="cat"></select>
+  <button data-f="all" class="on">wszystkie</button>
+  <button data-f="miss">tylko błędy</button>
+  <button data-f="missed">przeoczone wady</button>
+  <button data-f="false">fałszywe odrzucenia</button>
+  <label><input type="checkbox" id="mask" checked> maska wady</label>
+  <span id="stat"></span>
+</div>
+<div id="grid"></div>
+<script src="data.js"></script>
+<script>
+const D = window.DEF, sel = document.getElementById("cat"), grid = document.getElementById("grid");
+let filter = "all";
+Object.keys(D.cats).forEach(c => sel.add(new Option(c, c)));
+function render() {
+  const c = D.cats[sel.value], thr = c.threshold, showMask = document.getElementById("mask").checked;
+  let nMiss = 0, nFalse = 0, nDef = 0, nGood = 0, html = "", drew = false;
+  for (const r of c.items) { r.defective ? nDef++ : nGood++; const flagged = r.score > thr;
+    if (r.defective && !flagged) nMiss++; if (!r.defective && flagged) nFalse++; }
+  for (const r of c.items) {
+    const flagged = r.score > thr, ok = flagged === !!r.defective;
+    if (filter === "miss" && ok) continue;
+    if (filter === "missed" && !(r.defective && !flagged)) continue;
+    if (filter === "false" && !(!r.defective && flagged)) continue;
+    if (!drew && !flagged && filter === "all") { html += `<div class="thr">próg decyzji ${thr.toFixed(4)} (poniżej: uznane za dobre)</div>`; drew = true; }
+    const q = r.mask && showMask ? r.id + "_mask" : r.id;
+    html += `<div class="card ${ok ? "hit" : "miss"}"><div class="imgs">
+      <div><span>zapytanie</span><img loading="lazy" src="thumbs/${q}.jpg"></div>
+      <div><span>najbliższe dobre</span><img loading="lazy" src="thumbs/${r.nn}.jpg"></div></div>
+      <div class="meta"><span>${r.defective ? "wada: " + r.type : "dobry"}</span>
+      <span class="dim">wynik ${r.score.toFixed(4)} → ${flagged ? "odrzucony" : "przyjęty"}</span></div></div>`;
+  }
+  grid.innerHTML = html;
+  document.getElementById("stat").textContent = `galeria ${c.gallery} | test: ${nGood} dobrych, ${nDef} wadliwych | przeoczone ${nMiss}/${nDef}, fałszywe odrzucenia ${nFalse}/${nGood} | ${D.variant}`;
+}
+sel.onchange = render; document.getElementById("mask").onchange = render;
+document.querySelectorAll("button[data-f]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("button[data-f]").forEach(x => x.classList.toggle("on", x === b)); filter = b.dataset.f; render(); });
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wizualizatory: wszystkie zbiory</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --line:#2c313a; --fg:#e6e8eb; --dim:#8b93a0; --acc:#5aa9ff; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--fg); font:14px/1.4 system-ui,sans-serif; display:flex; flex-direction:column; }
+  nav { display:flex; gap:4px; align-items:flex-end; padding:8px 12px 0; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  nav b { margin-right:12px; align-self:center; }
+  nav button { background:transparent; color:var(--dim); border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; padding:8px 14px; font:inherit; cursor:pointer; }
+  nav button:hover { color:var(--fg); }
+  nav button.on { background:var(--bg); color:var(--acc); border-color:var(--line); }
+  nav button small { display:block; color:var(--dim); font-size:11px; }
+  nav button i { display:inline-block; width:7px; height:7px; border-radius:50%; margin-left:6px; background:var(--line); }
+  nav button i.loading { background:#f2b134; } nav button i.ready { background:#3ecf6e; }
+  #frames { flex:1; position:relative; }
+  iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:var(--bg); visibility:hidden; }
+  iframe.on { visibility:visible; }
+  #hint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--dim); }
+</style>
+</head>
+<body>
+<nav id="tabs"><b>Wizualizatory</b></nav>
+<div id="frames"><div id="hint">Wybierz zbiór.</div></div>
+<footer style="padding:6px 12px;border-top:1px solid var(--line);background:var(--panel);color:var(--dim);font-size:12px">Okrojony WIP pracy inżynierskiej (klasyczne ML: ASIFT + Shape Context + Opponent Color, VLAD, HNSW). Zdjęcia MVTec AD: &copy; MVTec Software GmbH, <a style="color:var(--acc)" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>, pomniejszone miniatury z zaznaczonymi konturami wad (Bergmann i in., CVPR 2019; IJCV 2021). Rendery 3D: modele Sam&rsquo;s Simple Instruments (Sam Meese), CC0. <a style="color:var(--acc)" href="https://github.com/senior-devs-doom/retrieval-visualizer#licencje">Licencje</a></footer>
+<script src="tabs.js"></script>
+<script>
+// Each dataset page lives in its own folder; its iframe is created only when the tab is first opened, and the
+// remaining tabs are warmed up one by one while the browser is idle, so switching is instant and nothing blocks the first view.
+const TABS = window.TABS || [], tabsEl = document.getElementById('tabs'), frames = document.getElementById('frames');
+const state = {}, btn = {};
+function setDot(id, cls) { const d = btn[id].querySelector('i'); d.className = cls; }
+function load(id) {
+  if (state[id]) return state[id];
+  const t = TABS.find(x => x.id === id), f = document.createElement('iframe');
+  f.title = t.title; f.src = t.id + '/index.html'; setDot(id, 'loading');
+  f.addEventListener('load', () => setDot(id, 'ready'));
+  frames.appendChild(f); return state[id] = f;
+}
+function show(id) {
+  const hint = document.getElementById('hint'); if (hint) hint.remove();
+  const f = load(id);
+  Object.entries(state).forEach(([k, fr]) => fr.classList.toggle('on', k === id));
+  Object.entries(btn).forEach(([k, b]) => b.classList.toggle('on', k === id));
+  history.replaceState(null, '', '#' + id);
+  try { localStorage.setItem('viz-tab', id); } catch (e) {}
+  warm();
+}
+let warming = false;
+function warm() {
+  if (warming) return; warming = true;
+  const next = () => {
+    const t = TABS.find(x => !state[x.id]);
+    if (!t) return;
+    const f = load(t.id);
+    f.addEventListener('load', () => (window.requestIdleCallback || setTimeout)(next), { once: true });
+  };
+  (window.requestIdleCallback || setTimeout)(next);
+}
+TABS.forEach(t => {
+  const b = document.createElement('button');
+  b.innerHTML = `${t.title}<i></i><small>${t.subtitle}</small>`;
+  b.onclick = () => show(t.id); btn[t.id] = b; tabsEl.appendChild(b);
+});
+document.addEventListener('keydown', e => {
+  const n = +e.key; if (n >= 1 && n <= TABS.length && !/INPUT|SELECT|TEXTAREA/.test((e.target.tagName || ''))) show(TABS[n - 1].id);
+});
+let start = location.hash.slice(1);
+try { start = start || localStorage.getItem('viz-tab') || ''; } catch (e) {}
+if (TABS.length) show(TABS.find(t => t.id === start) ? start : TABS[0].id);
+</script>
+</body>
+</html>
