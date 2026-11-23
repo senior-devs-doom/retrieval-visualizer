@@ -27,7 +27,7 @@
   #decBox input[type=range] { width:130px; }
   #decStat { color:var(--dim); }
   .tag { position:absolute; right:3px; bottom:3px; background:rgba(0,0,0,.72); border-radius:4px; padding:0 5px; font-size:11px; }
-  .badge { position:absolute; right:3px; top:3px; background:rgba(0,0,0,.78); border-radius:4px; padding:0 5px; font-size:11px; }
+  .badge { position:absolute; left:3px; right:3px; top:24px; text-align:center; background:rgba(0,0,0,.78); border-radius:4px; padding:0 5px; font-size:11px; }
   .badge.v2w { color:var(--ok); } .badge.v1w { color:var(--bad); } .badge.bothw { color:var(--mid); } .badge.bothok { color:var(--dim); }
   #map { flex:1; display:none; position:relative; }
   #cv { width:100%; height:100%; display:block; cursor:grab; }
@@ -156,7 +156,7 @@ function updateDecText() {
   if (!hasAb) return;
   const key = keyOf(mode), s = decStats(key), st = statFor(key);
   $('thv').textContent = curTh().toFixed(3);
-  $('decStat').textContent = `· powyżej progu ${(100 * s.frac).toFixed(1)}% (${s.acc}/${s.n}) · trafność tych obrazów ${isNaN(s.prec) ? '–' : s.prec.toFixed(3)} (wszystkich ${st.top1.toFixed(3)}) · próg: ${defTh(key).src}`;
+  $('decStat').textContent = `· powyżej progu ${(100 * s.frac).toFixed(1)}% (${s.acc}/${s.n}) · trafność tych obrazów ${isNaN(s.prec) ? '–' : s.prec.toFixed(3)} (wszystkich ${st.top1.toFixed(3)})`;
 }
 function updateDec() {  // the threshold or the score kind changed
   updateDecText();
@@ -166,7 +166,7 @@ function updateDec() {  // the threshold or the score kind changed
 }
 function recolorCells() { document.querySelectorAll('#grid .cell').forEach(c => { c.style.borderColor = cellColor(+c.dataset.i); }); }
 function setTitle() {
-  const s = statFor(keyOf(mode)), vn = KEYS.length ? (mode === 'diff' ? 'różnice: ' + nm(DA) + ' vs ' + nm(DB) + ' (liczby: ' + nm(DB) + ')' : nm(mode)) : '';
+  const s = statFor(keyOf(mode)), vn = KEYS.length ? (mode === 'diff' ? 'różnice: ' + nm(DA) + ' vs ' + nm(DB) : nm(mode)) : '';
   $('title').textContent = D.title + (vn ? ' · ' + vn : '') + ' · top-1 ' + s.top1.toFixed(3) + ', mAP ' + s.ap.toFixed(3);
 }
 setTitle();
