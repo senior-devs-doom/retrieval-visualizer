@@ -1,200 +1,0 @@
-<!doctype html>
-<html lang="pl">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wizualizator wyszukiwania</title>
-<style>
-  :root { --bg:#14161a; --panel:#1d2026; --line:#2c313a; --fg:#e6e8eb; --dim:#8b93a0; --ok:#3ecf6e; --bad:#ef5350; --mid:#f2b134; --acc:#5aa9ff; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; display:flex; height:100vh; overflow:hidden; }
-  #main { flex:1; display:flex; flex-direction:column; min-width:0; }
-  #bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--line); }
-  #bar b { font-size:15px; }
-  select, button, input[type=range] { background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:4px 8px; font:inherit; }
-  button.on { border-color:var(--acc); color:var(--acc); }
-  #stat { color:var(--dim); margin-left:auto; }
-  #grid { flex:1; min-height:0; overflow:auto; grid-auto-rows:max-content; padding:12px; display:grid; grid-template-columns:repeat(auto-fill,minmax(112px,1fr)); gap:8px; align-content:start; }
-  .cell { position:relative; border:3px solid var(--line); border-radius:6px; overflow:hidden; cursor:pointer; background:#000; }
-  .cell::before { content:''; display:block; padding-top:75%; }
-  .cell img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
-  .cell.sel { outline:3px solid var(--acc); outline-offset:1px; }
-  .tag { position:absolute; right:3px; bottom:3px; background:rgba(0,0,0,.72); border-radius:4px; padding:0 5px; font-size:11px; }
-  #map { flex:1; display:none; position:relative; }
-  #cv { width:100%; height:100%; display:block; cursor:grab; }
-  #tip { position:absolute; pointer-events:none; display:none; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:4px; font-size:12px; }
-  #tip img { display:block; width:140px; }
-  #side { width:520px; max-width:45vw; background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:14px; }
-  #side h3 { margin:14px 0 6px; font-size:13px; color:var(--dim); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-  #q { display:flex; gap:12px; }
-  #q img { width:200px; border-radius:6px; }
-  .legend span { margin-right:12px; }
-  .nngrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
-  .nn { border:3px solid var(--bad); border-radius:6px; overflow:hidden; background:#000; cursor:pointer; }
-  .nn.hit { border-color:var(--ok); }
-  .nn img { width:100%; display:block; }
-  .nn div { padding:3px 5px; font-size:11px; background:var(--panel); color:var(--dim); }
-  .nn div b { color:var(--fg); }
-  .missed { display:flex; flex-wrap:wrap; gap:8px; }
-  .missed .nn { width:110px; border-color:var(--mid); }
-  .empty { color:var(--dim); padding:30px 0; }
-</style>
-</head>
-<body>
-<div id="main">
-  <div id="bar">
-    <b id="title"></b>
-    <span>widok</span><button id="vList" class="on">lista</button><button id="vMap">mapa 2D</button>
-    <span>filtr</span>
-    <select id="filter">
-      <option value="all">wszystkie</option>
-      <option value="miss">pierwszy trafny nie na 1. miejscu</option>
-      <option value="bad">AP &lt; 0,5</option>
-      <option value="zero">brak trafnego w top-10</option>
-    </select>
-    <span>sortuj</span>
-    <select id="sort"><option value="ap">AP rosnąco (najgorsze pierwsze)</option><option value="id">po numerze</option></select>
-    <span>top-K</span><input id="k" type="range" min="5" max="30" value="12"><span id="kv">12</span>
-    <span id="stat"></span>
-  </div>
-  <div id="grid"></div>
-  <div id="map"><canvas id="cv"></canvas><div id="tip"></div></div>
-</div>
-<div id="side"><div class="empty">Wybierz obraz z listy lub mapy.<br><br>Ramka kafelka: <span style="color:hsl(135 55% 72%)">jasnozielona</span> = 1. sąsiad trafny, <span style="color:hsl(135 55% 48%)">ciemniejsza zieleń</span> = kolejni sąsiedzi z rzędu też trafni, <span style="color:var(--mid)">żółta</span> = trafny jest w top-K, ale nie pierwszy, <span style="color:var(--bad)">czerwona</span> = brak trafnego w top-K.<br><br>Ramka sąsiada w panelu: <span style="color:var(--ok)">zielona</span> = ten sam obiekt, <span style="color:var(--bad)">czerwona</span> = inny obiekt, <span style="color:var(--mid)">żółta</span> = trafny obraz poza top-K (z numerem pozycji).</div></div>
-<div id="loading" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--dim);z-index:9">Ładowanie danych…</div>
-<script>
-let D, I;
-function boot() {
-let sel = null, view = 'list', K = 12, mapT = {s:1, x:0, y:0};
-const thumb = i => 'thumbs/' + I[i].id + '.jpg';
-// Border colour of a tile from the neighbour list (not from AP): light green = 1st neighbour is the right object, a deeper green for
-// every further consecutive neighbour that is also right; yellow = a right object is in the top-K but not first; red = none in top-K.
-function cellColor(i) {
-  const im = I[i], nn = im.nn;
-  let run = 0; while (run < nn.length && I[nn[run][0]].label === im.label) run++;
-  if (run > 0) return `hsl(135 55% ${72 - 8 * (Math.min(run, 5) - 1)}%)`;
-  return nn.slice(0, K).some(n => I[n[0]].label === im.label) ? 'var(--mid)' : 'var(--bad)';
-}
-function recolorCells() { document.querySelectorAll('#grid .cell').forEach(c => { c.style.borderColor = cellColor(+c.dataset.i); }); }
-$('title').textContent = D.title + ' (średnie AP, każdy obraz jako zapytanie: ' + D.mean_ap + ')';
-
-function visible() {
-  const f = $('filter').value;
-  let idx = I.map((_, i) => i).filter(i => {
-    const im = I[i];
-    if (f === 'miss') return im.first > 1;
-    if (f === 'bad') return im.ap < 0.5;
-    if (f === 'zero') return im.first > 10;
-    return true;
-  });
-  if ($('sort').value === 'ap') idx.sort((a, b) => I[a].ap - I[b].ap || a - b);
-  return idx;
-}
-let gridIdx = [], gridPos = 0, gridObs = null;
-const CHUNK = 120;
-function cellHtml(i) { return `<div class="cell${i === sel ? ' sel' : ''}" data-i="${i}" style="border-color:${cellColor(i)}"><img loading="lazy" decoding="async" src="${thumb(i)}"><span class="tag">${I[i].meta ? I[i].meta.split(", ").slice(1).join(" ").replace(/azymut |elewacja |°/g, "") + " · " : ""}AP ${I[i].ap.toFixed(2)}</span></div>`; }
-function moreCells() {
-  const old = $('sentinel'); if (old) old.remove();
-  const end = Math.min(gridPos + CHUNK, gridIdx.length);
-  $('grid').insertAdjacentHTML('beforeend', gridIdx.slice(gridPos, end).map(cellHtml).join(''));
-  gridPos = end;
-  if (gridPos < gridIdx.length) { $('grid').insertAdjacentHTML('beforeend', '<div id="sentinel" style="grid-column:1/-1;height:1px"></div>'); gridObs.observe($('sentinel')); }
-}
-function renderGrid() {
-  gridIdx = visible(); gridPos = 0;
-  $('stat').textContent = gridIdx.length + ' z ' + I.length + ' obrazów';
-  $('grid').innerHTML = '';
-  if (!gridObs) gridObs = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) moreCells(); }, { root: $('grid'), rootMargin: '600px' });
-  moreCells();
-}
-$('grid').addEventListener('click', e => { const c = e.target.closest('.cell'); if (c) select(+c.dataset.i); });
-
-function card(j, hit, extra) {
-  return `<div class="nn${hit ? ' hit' : ''}" data-i="${j}"><img src="${thumb(j)}">${extra}</div>`;
-}
-function select(i) {
-  sel = i; const im = I[i];
-  const inTop = new Set(im.nn.slice(0, K).map(n => n[0]));
-  const names = D.streams;
-  let h = `<div id="q"><img src="${thumb(i)}"><div><b>${im.id}</b><br>${im.meta ? im.meta + '<br>' : ''}obiekt ${im.label}<br>AP ${im.ap.toFixed(3)}<br>pierwszy trafny na pozycji <b>${im.first || '–'}</b><br>trafnych obrazów w bazie: ${im.rel.length}</div></div>`;
-  h += `<h3>Najbliższe obrazy (top-${K})</h3><div class="nngrid">`;
-  im.nn.slice(0, K).forEach((n, r) => {
-    const [j, s, ps, ang] = n, hit = I[j].label === im.label;
-    h += card(j, hit, `<div><b>#${r + 1}</b> ${s.toFixed(3)}${ang !== undefined ? ' · kąt ' + ang + '°' : ''}<br>${names.map((nm, k) => nm + ' ' + ps[k].toFixed(2)).join(' · ')}</div>`);
-  });
-  h += `</div>`;
-  const missed = im.rel.filter(([j]) => !inTop.has(j));
-  h += `<h3>Trafne obrazy poza top-${K}</h3>`;
-  h += missed.length ? `<div class="missed">${missed.map(([j, r, ang]) => card(j, false, `<div>pozycja <b>${r}</b>${ang !== undefined ? '<br>kąt ' + ang + '°' : ''}</div>`)).join('')}</div>` : `<div class="empty" style="padding:6px 0">brak: wszystkie trafne są w top-${K}</div>`;
-  h += `<h3>Jak czytać</h3><div style="color:var(--dim);font-size:12px">Liczby przy obrazie: podobieństwo cosinusowe wektora końcowego, a po nim cosinusy wektorów VLAD poszczególnych strumieni (asift, shape, color) przed PCA. Jeśli błędny sąsiad ma wysoki cosinus w jednym strumieniu, ten strumień go wprowadził.</div>`;
-  $('side').innerHTML = h;
-  document.querySelectorAll('#grid .cell').forEach(c => c.classList.toggle('sel', +c.dataset.i === i));
-  if (view === 'map') drawMap();
-}
-$('side').addEventListener('click', e => { const c = e.target.closest('.nn'); if (c) select(+c.dataset.i); });
-
-function setView(v) {
-  view = v;
-  $('vList').classList.toggle('on', v === 'list'); $('vMap').classList.toggle('on', v === 'map');
-  $('grid').style.display = v === 'list' ? 'grid' : 'none';
-  $('map').style.display = v === 'map' ? 'block' : 'none';
-  if (v === 'map') { fit(); drawMap(); }
-}
-$('vList').onclick = () => setView('list'); $('vMap').onclick = () => setView('map');
-$('filter').onchange = $('sort').onchange = renderGrid;
-$('k').oninput = () => { K = +$('k').value; $('kv').textContent = K; recolorCells(); if (sel !== null) select(sel); };
-
-// ---- mapa 2D (t-SNE), przesuwanie i powiększanie
-const cv = $('cv'), ctx = cv.getContext('2d'), tip = $('tip');
-const hue = l => `hsl(${(l * 137.5) % 360} 70% 60%)`;
-function fit() { const r = $('map').getBoundingClientRect(); cv.width = r.width * devicePixelRatio; cv.height = r.height * devicePixelRatio; }
-const P = i => { const m = Math.min(cv.width, cv.height) * 0.92; return [ (I[i].xy[0] - .5) * m * mapT.s + cv.width / 2 + mapT.x, (I[i].xy[1] - .5) * m * mapT.s + cv.height / 2 + mapT.y ]; };
-function drawMap() {
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  const dpr = devicePixelRatio, vis = new Set(visible());
-  I.forEach((im, i) => { const [x, y] = P(i); ctx.globalAlpha = vis.has(i) ? 1 : .15; ctx.fillStyle = hue(im.label); ctx.beginPath(); ctx.arc(x, y, 3 * dpr, 0, 7); ctx.fill(); });
-  ctx.globalAlpha = 1;
-  if (sel === null) return;
-  const im = I[sel], [qx, qy] = P(sel), inTop = new Set();
-  ctx.lineWidth = 1.5 * dpr;
-  im.nn.slice(0, K).forEach(([j]) => { inTop.add(j); const [x, y] = P(j), hit = I[j].label === im.label; ctx.strokeStyle = hit ? '#3ecf6e' : '#ef5350'; ctx.beginPath(); ctx.moveTo(qx, qy); ctx.lineTo(x, y); ctx.stroke(); ctx.beginPath(); ctx.arc(x, y, 6 * dpr, 0, 7); ctx.stroke(); });
-  im.rel.forEach(([j, r]) => { if (inTop.has(j)) return; const [x, y] = P(j); ctx.strokeStyle = '#f2b134'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(x, y, 7 * dpr, 0, 7); ctx.stroke(); ctx.fillStyle = '#f2b134'; ctx.font = 11 * dpr + 'px system-ui'; ctx.fillText('#' + r, x + 9 * dpr, y - 6 * dpr); });
-  ctx.strokeStyle = '#5aa9ff'; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.arc(qx, qy, 9 * dpr, 0, 7); ctx.stroke();
-}
-function nearest(ev) {
-  const r = cv.getBoundingClientRect(), mx = (ev.clientX - r.left) * devicePixelRatio, my = (ev.clientY - r.top) * devicePixelRatio;
-  let best = -1, bd = (10 * devicePixelRatio) ** 2;
-  I.forEach((_, i) => { const [x, y] = P(i), d = (x - mx) ** 2 + (y - my) ** 2; if (d < bd) { bd = d; best = i; } });
-  return best;
-}
-let drag = null, moved = false;
-cv.onmousedown = e => { drag = [e.clientX, e.clientY, mapT.x, mapT.y]; moved = false; cv.style.cursor = 'grabbing'; };
-window.onmouseup = e => { if (drag && !moved && view === 'map') { const i = nearest(e); if (i >= 0) select(i); } drag = null; cv.style.cursor = 'grab'; };
-cv.onmousemove = e => {
-  if (drag) { const dx = e.clientX - drag[0], dy = e.clientY - drag[1]; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; mapT.x = drag[2] + dx * devicePixelRatio; mapT.y = drag[3] + dy * devicePixelRatio; drawMap(); return; }
-  const i = nearest(e);
-  if (i < 0) { tip.style.display = 'none'; return; }
-  const r = $('map').getBoundingClientRect();
-  tip.style.display = 'block'; tip.style.left = (e.clientX - r.left + 14) + 'px'; tip.style.top = (e.clientY - r.top + 14) + 'px';
-  tip.innerHTML = `<img src="${thumb(i)}">${I[i].meta || I[i].id} · obiekt ${I[i].label}<br>AP ${I[i].ap.toFixed(2)}`;
-};
-cv.onmouseleave = () => { tip.style.display = 'none'; };
-cv.onwheel = e => {
-  e.preventDefault();
-  const r = cv.getBoundingClientRect(), mx = (e.clientX - r.left) * devicePixelRatio - cv.width / 2, my = (e.clientY - r.top) * devicePixelRatio - cv.height / 2;
-  const f = e.deltaY < 0 ? 1.2 : 1 / 1.2, ns = Math.min(40, Math.max(.5, mapT.s * f)), k = ns / mapT.s;
-  mapT.x = mx - (mx - mapT.x) * k; mapT.y = my - (my - mapT.y) * k; mapT.s = ns; drawMap();
-};
-window.onresize = () => { if (view === 'map') { fit(); drawMap(); } };
-renderGrid();
-$('loading').remove();
-}
-// data.js is injected asynchronously so the page shell shows at once and the 1-3 MB parse does not block the first paint
-const $ = id => document.getElementById(id);
-const ds = document.createElement('script'); ds.src = 'data.js'; ds.async = true;
-ds.onload = () => { D = window.VIZ; I = D.images; boot(); };
-ds.onerror = () => { $('loading').textContent = 'Brak data.js: uruchom python -m scripts.visualizer --dataset ...'; };
-document.head.appendChild(ds);
-</script>
-</body>
-</html>
